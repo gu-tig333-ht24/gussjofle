@@ -69,6 +69,7 @@ class _TodoListScreenState extends State<TodoListScreen> {
     return Scaffold(
       appBar: AppBar(
         title: const Text('To do'),
+        centerTitle: true,
         actions: [
           IconButton(
             icon: const Icon(Icons.add),
