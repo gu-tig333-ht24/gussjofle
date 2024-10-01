@@ -35,7 +35,7 @@ class Task {
 
 class _TodoListScreenState extends State<TodoListScreen> {
   final List<Task> _tasks = [];
-  String _filter = 'All'; // Hantera filtreringen (All, Done, Undone)
+  String _filter = 'All'; // Handle filtering (All, Done, Undone)
 
   void _addTask(String taskName) {
     setState(() {
@@ -61,7 +61,7 @@ class _TodoListScreenState extends State<TodoListScreen> {
     } else if (_filter == 'Undone') {
       return _tasks.where((task) => !task.isCompleted).toList();
     }
-    return _tasks; // Visa alla uppgifter
+    return _tasks; // Show all tasks
   }
 
   @override
