@@ -1,4 +1,9 @@
 import 'package:flutter/material.dart';
+import 'package:http/http.dart' as http;
+import 'dart:convert';
+
+const String apiUrl = 'https://todoapp-api.apps.k8s.gu.se/todos';
+const String apiKey = '7b3fddd3-a6a0-47be-90e5-6eaf1c2ec073';
 
 void main() {
   runApp(const MyApp());
@@ -27,50 +32,128 @@ class TodoListScreen extends StatefulWidget {
 }
 
 class Task {
-  String name;
-  bool isCompleted;
+  String id;
+  String title;
+  bool done;
 
-  Task(this.name, {this.isCompleted = false});
+  Task({required this.id, required this.title, required this.done});
+
+  factory Task.fromJson(Map<String, dynamic> json) {
+    return Task(
+      id: json['id'],
+      title: json['title'],
+      done: json['done'],
+    );
+  }
+
+  Map<String, dynamic> toJson() {
+    return {
+      'title': title,
+      'done': done,
+    };
+  }
 }
 
 class _TodoListScreenState extends State<TodoListScreen> {
-  final List<Task> _tasks = [];
-  String _filter = 'All'; // Handle filtering (All, Done, Undone)
+  List<Task> _tasks = [];
+  String _filter = 'All'; 
+  bool _isLoading = false;
+  String? _errorMessage;
 
-  void _addTask(String taskName) {
-    setState(() {
-      _tasks.add(Task(taskName));
-    });
+  @override
+  void initState() {
+    super.initState();
+    _fetchTasks();
   }
 
-  void _toggleTaskCompletion(int index) {
+  Future<void> _fetchTasks() async {
     setState(() {
-      _tasks[index].isCompleted = !_tasks[index].isCompleted;
+      _isLoading = true;
+      _errorMessage = null;
     });
-  }
-
-  void _deleteTask(int index) {
-    setState(() {
-      _tasks.removeAt(index);
-    });
-  }
-
-  List<Task> _getFilteredTasks() {
-    if (_filter == 'Done') {
-      return _tasks.where((task) => task.isCompleted).toList();
-    } else if (_filter == 'Undone') {
-      return _tasks.where((task) => !task.isCompleted).toList();
+    try {
+      final response = await http.get(Uri.parse('$apiUrl?key=$apiKey'));
+      if (response.statusCode == 200) {
+        final List<dynamic> taskJson = json.decode(response.body);
+        setState(() {
+          _tasks = taskJson.map((json) => Task.fromJson(json)).toList();
+        });
+      } else {
+        setState(() {
+          _errorMessage = 'Failed to load tasks';
+        });
+      }
+    } catch (e) {
+      setState(() {
+        _errorMessage = 'An error occurred';
+      });
+    } finally {
+      setState(() {
+        _isLoading = false;
+      });
     }
-    return _tasks; // Show all tasks
+  }
+
+  Future<void> _addTask(String taskTitle) async {
+    final newTask = {'title': taskTitle, 'done': false};
+    final response = await http.post(
+      Uri.parse('$apiUrl?key=$apiKey'),
+      headers: {'Content-Type': 'application/json'},
+      body: json.encode(newTask),
+    );
+    if (response.statusCode == 200) {
+      _fetchTasks(); 
+    } else {
+      print('Failed to add task');
+    }
+  }
+
+  Future<void> _toggleTaskCompletion(Task task) async {
+    final updatedTask = {'title': task.title, 'done': !task.done};
+    final response = await http.put(
+      Uri.parse('$apiUrl/${task.id}?key=$apiKey'),
+      headers: {'Content-Type': 'application/json'},
+      body: json.encode(updatedTask),
+    );
+    if (response.statusCode == 200) {
+      _fetchTasks(); 
+    } else {
+      print('Failed to update task');
+    }
+  }
+
+  
+  Future<void> _deleteTask(String taskId) async {
+    final response = await http.delete(
+      Uri.parse('$apiUrl/$taskId?key=$apiKey'),
+    );
+    if (response.statusCode == 200) {
+      _fetchTasks(); 
+    } else {
+      print('Failed to delete task');
+    }
+  }
+
+  
+  List<Task> _getFilteredTasks() {
+    switch (_filter) {
+      case 'Done':
+        return _tasks.where((task) => task.done).toList();
+      case 'Undone':
+        return _tasks.where((task) => !task.done).toList();
+      default:
+        return _tasks;
+    }
   }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: const Text('To do'),
+        title: const Text('To-Do List'),
         centerTitle: true,
         actions: [
+          
           IconButton(
             icon: const Icon(Icons.add),
             onPressed: () {
@@ -82,6 +165,7 @@ class _TodoListScreenState extends State<TodoListScreen> {
               );
             },
           ),
+          
           PopupMenuButton<String>(
             onSelected: (String result) {
               setState(() {
@@ -105,40 +189,44 @@ class _TodoListScreenState extends State<TodoListScreen> {
           ),
         ],
       ),
-      body: Column(
-        children: <Widget>[
-          Expanded(
-            child: ListView.builder(
-              itemCount: _getFilteredTasks().length,
-              itemBuilder: (context, index) {
-                final task = _getFilteredTasks()[index];
-                return ListTile(
-                  title: Text(
-                    task.name,
-                    style: TextStyle(
-                      decoration: task.isCompleted
-                          ? TextDecoration.lineThrough
-                          : TextDecoration.none,
+      body: _isLoading
+          ? const Center(child: CircularProgressIndicator())
+          : _errorMessage != null
+              ? Center(child: Text(_errorMessage!))
+              : Column(
+                  children: <Widget>[
+                    Expanded(
+                      child: ListView.builder(
+                        itemCount: _getFilteredTasks().length,
+                        itemBuilder: (context, index) {
+                          final task = _getFilteredTasks()[index];
+                          return ListTile(
+                            title: Text(
+                              task.title,
+                              style: TextStyle(
+                                decoration: task.done
+                                    ? TextDecoration.lineThrough
+                                    : TextDecoration.none,
+                              ),
+                            ),
+                            leading: Checkbox(
+                              value: task.done,
+                              onChanged: (bool? value) {
+                                _toggleTaskCompletion(task);
+                              },
+                            ),
+                            trailing: IconButton(
+                              icon: const Icon(Icons.delete),
+                              onPressed: () {
+                                _deleteTask(task.id);
+                              },
+                            ),
+                          );
+                        },
+                      ),
                     ),
-                  ),
-                  trailing: IconButton(
-                    icon: const Icon(Icons.delete),
-                    onPressed: () {
-                      _deleteTask(index);
-                    },
-                  ),
-                  leading: Checkbox(
-                    value: task.isCompleted,
-                    onChanged: (bool? value) {
-                      _toggleTaskCompletion(index);
-                    },
-                  ),
-                );
-              },
-            ),
-          ),
-        ],
-      ),
+                  ],
+                ),
     );
   }
 }
@@ -159,6 +247,7 @@ class AddTaskScreen extends StatelessWidget {
         padding: const EdgeInsets.all(16.0),
         child: Column(
           children: [
+            
             TextField(
               controller: _controller,
               decoration: const InputDecoration(
@@ -167,6 +256,7 @@ class AddTaskScreen extends StatelessWidget {
               ),
             ),
             const SizedBox(height: 16),
+            
             ElevatedButton(
               onPressed: () {
                 if (_controller.text.isNotEmpty) {
